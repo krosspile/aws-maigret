@@ -47,7 +47,7 @@ resource "aws_cloudwatch_log_group" "lambda_log_group" {
 
 data "archive_file" "lambda_src" {
   type        = "zip"
-  source_dir  = "../src/api"
+  source_dir  = "${path.module}/../src/api"
   output_path = "lambda.zip"
 }
 
@@ -60,7 +60,10 @@ resource "aws_lambda_function" "api_lambda" {
 
   environment {
     variables = {
-      SQS_QUEUE_URL = aws_sqs_queue.jobs_queue.id
+      SQS_QUEUE_URL       = aws_sqs_queue.jobs_queue.id
+      COGNITO_CLIENT_ID   = aws_cognito_user_pool_client.user_pool_client.id
+      COGNITO_USERPOOL_ID = aws_cognito_user_pool.user_pool.id
+
     }
   }
 
@@ -72,6 +75,18 @@ resource "aws_apigatewayv2_api" "sistemi-cloud-api" {
   protocol_type = "HTTP"
 }
 
+resource "aws_apigatewayv2_authorizer" "cognito_authorizer" {
+  api_id           = aws_apigatewayv2_api.sistemi-cloud-api.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "cognito_authorizer"
+
+  jwt_configuration {
+    audience = [aws_cognito_user_pool_client.user_pool_client.id]
+    issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.user_pool.id}"
+  }
+}
+
 resource "aws_apigatewayv2_integration" "lambda_integration" {
   api_id                 = aws_apigatewayv2_api.sistemi-cloud-api.id
   integration_type       = "AWS_PROXY"
@@ -79,15 +94,31 @@ resource "aws_apigatewayv2_integration" "lambda_integration" {
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "get_route" {
+resource "aws_apigatewayv2_route" "get_jobs" {
+  api_id             = aws_apigatewayv2_api.sistemi-cloud-api.id
+  route_key          = "GET /jobs"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "post_jobs" {
+  api_id             = aws_apigatewayv2_api.sistemi-cloud-api.id
+  route_key          = "POST /jobs"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "post_login" {
   api_id    = aws_apigatewayv2_api.sistemi-cloud-api.id
-  route_key = "GET /jobs"
+  route_key = "POST /login"
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
-resource "aws_apigatewayv2_route" "post_route" {
+resource "aws_apigatewayv2_route" "post_signup" {
   api_id    = aws_apigatewayv2_api.sistemi-cloud-api.id
-  route_key = "POST /jobs"
+  route_key = "POST /signup"
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
@@ -102,6 +133,10 @@ resource "aws_lambda_permission" "apigw_lambda" {
   function_name = aws_lambda_function.api_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.sistemi-cloud-api.execution_arn}/*/*"
+}
+
+output "cognito_authorizer_id" {
+  value = aws_apigatewayv2_authorizer.cognito_authorizer.id
 }
 
 output "api_endpoint" {

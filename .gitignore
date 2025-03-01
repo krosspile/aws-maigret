@@ -1,0 +1,4 @@
+.terraform**
+lambda.zip
+*.tfstate
+*.backup

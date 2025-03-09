@@ -10,7 +10,9 @@ module "vpc" {
 
   enable_nat_gateway = true
   single_nat_gateway = true
+
 }
+
 
 module "eks" {
   source          = "terraform-aws-modules/eks/aws"
@@ -20,32 +22,72 @@ module "eks" {
   vpc_id          = module.vpc.vpc_id
   subnet_ids      = module.vpc.private_subnets
 
+  cluster_endpoint_public_access           = true
+  enable_cluster_creator_admin_permissions = true
+
+
+  node_security_group_additional_rules = {
+    ingress_cluster_to_node_all_traffic = {
+      description                   = "Cluster API to Nodegroup all traffic"
+      protocol                      = "-1"
+      from_port                     = 0
+      to_port                       = 0
+      type                          = "ingress"
+      source_cluster_security_group = true
+    }
+  }
+
 
   eks_managed_node_groups = {
     eks_nodes = {
-      desired_capacity = 2
-      max_capacity     = 3
+      desired_capacity = 1
+      max_capacity     = 1
       min_capacity     = 1
 
-      instance_type = "t3.medium"
+      instance_type = ["t3.medium"]
     }
   }
 }
 
-provider "kubernetes" {
-  host                   = module.eks_cluster.eks_cluster_id.endpoint
-  token                  = module.eks_cluster.eks_cluster_id.token
-  cluster_ca_certificate = base64decode(module.eks_cluster.eks_cluster_id.certificate_authority[0].data)
+data "aws_eks_cluster" "cluster" {
+  name       = module.eks.cluster_name
+  depends_on = [module.eks.cluster_name]
 }
+
+data "aws_eks_cluster_auth" "cluster" {
+  name       = module.eks.cluster_name
+  depends_on = [module.eks.cluster_name]
+}
+
+provider "kubernetes" {
+  host                   = data.aws_eks_cluster.cluster.endpoint
+  token                  = data.aws_eks_cluster_auth.cluster.token
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
+}
+
 
 provider "helm" {
   kubernetes {
-    host                   = module.eks_cluster.eks_cluster_id.endpoint
-    token                  = module.eks_cluster.eks_cluster_id.token
-    cluster_ca_certificate = base64decode(module.eks_cluster.eks_cluster_id.certificate_authority[0].data)
+    host                   = data.aws_eks_cluster.cluster.endpoint
+    token                  = data.aws_eks_cluster_auth.cluster.token
+    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
   }
+
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
+
+resource "helm_release" "keda" {
+  name = "keda"
+
+  repository       = "https://kedacore.github.io/charts"
+  chart            = "keda"
+  namespace        = "keda"
+  version          = "2.16.1"
+  create_namespace = true
+}
 
 output "vpc_id" {
   description = "ID of the VPC"
@@ -61,3 +103,4 @@ output "cluster_endpoint" {
   description = "EKS cluster endpoint"
   value       = module.eks.cluster_endpoint
 }
+

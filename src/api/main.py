@@ -1,39 +1,104 @@
 import boto3
 import json
 import os
+import uuid
 
 import logging
 import json
 
 sqs = boto3.client("sqs")
 cognito = boto3.client("cognito-idp")
+dynamodb_resource = boto3.resource("dynamodb")
 
 QUEUE_URL = os.getenv("SQS_QUEUE_URL")
 CLIENT_ID = os.getenv("COGNITO_CLIENT_ID")
 USERPOOL_ID = os.getenv("COGNITO_USERPOOL_ID")
 
 
+def get_entry_from_username(username):
+    table = dynamodb_resource.Table("Jobs")
+
+    if not table:
+        None
+
+    response = table.scan(
+        FilterExpression=boto3.dynamodb.conditions.Attr("username").eq(username)
+    )
+    
+    return response.get("Items", [])
+
 def get_jobs(event, context):
     logging.error("get_job")
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"message": "GET request received"}),
-    }
+    query_params = event.get("queryStringParameters", {})
+
+    username = query_params.get("username", None)
+
+    if username is None:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "username is required"}),
+        }
+
+    res = get_entry_from_username(username)
+
+    if res == None:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Unexpected error"}),
+        }
+    else:
+        return {
+            "statusCode": 200,
+            "body": json.dumps(res),
+        }
 
 
 def create_job(event, context):
     logging.error("create_job")
 
-    response = sqs.send_message(
-        QueueUrl=QUEUE_URL,
-        MessageBody=json.dumps(event["body"]),
-    )
+    try:
+        body = json.loads(event["body"])
+        username = body.get("username")
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"message": "POST request received"}),
-    }
+        if username is None:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "username is required"}),
+            }
+        
+        res = get_entry_from_username(username)
+
+        if res is None:
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": "Unexpected error"}),
+            }
+
+        elif len(res) == 0:        
+            table = dynamodb_resource.Table("Jobs")
+
+            entry = {"job_id": str(uuid.uuid4()), "username": username, "status": "CREATED"}
+
+            table.put_item(
+                Item=entry
+            )
+
+            sqs.send_message(
+                QueueUrl=QUEUE_URL,
+                MessageBody=json.dumps(entry),
+            )
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"message": "Job enqueued successfully"}),
+        }
+
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": f"Internal Server Error"}),
+        }
 
 
 def login(event, context):

@@ -42,7 +42,7 @@ module "eks" {
   eks_managed_node_groups = {
     eks_nodes = {
       desired_capacity = 1
-      max_capacity     = 1
+      max_capacity     = 3
       min_capacity     = 1
 
       instance_type = ["t3.medium"]
@@ -139,7 +139,7 @@ resource "kubernetes_manifest" "app_deployment" {
         spec = {
           containers = [{
             name  = "app"
-            image = "${data.service.repository_url}:latest"
+            image = "${data.aws_ecr_repository.service.repository_url}:latest"
 
             imagePullPolicy = "Always"
 
@@ -170,9 +170,12 @@ resource "kubernetes_manifest" "keda_scaled_object" {
       scaleTargetRef = {
         name = "app"
       }
+      
       minReplicaCount = 1
       maxReplicaCount = 5
       pollingInterval = 15
+      cooldownPeriod = 100
+
       triggers = [{
         type = "aws-sqs-queue"
         metadata = {

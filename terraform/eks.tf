@@ -26,6 +26,7 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
 
 
+
   node_security_group_additional_rules = {
     ingress_cluster_to_node_all_traffic = {
       description                   = "Cluster API to Nodegroup all traffic"
@@ -88,6 +89,104 @@ resource "helm_release" "keda" {
   version          = "2.16.1"
   create_namespace = true
 }
+
+data "aws_ecr_repository" "service" {
+  name = "app"
+}
+
+variable "deploy_k8s" {
+  description = "Set to true to deploy Kubernetes resources after EKS creation"
+  type        = bool
+  default     = false
+}
+
+
+
+### Kubernetes Namespace
+resource "kubernetes_namespace" "app_ns" {
+  count = var.deploy_k8s ? 1 : 0
+  metadata {
+    name = "app"
+  }
+}
+
+### Kubernetes Deployment
+resource "kubernetes_manifest" "app_deployment" {
+  count = var.deploy_k8s ? 1 : 0
+  manifest = {
+    apiVersion = "apps/v1"
+    kind       = "Deployment"
+    metadata = {
+      name      = "app"
+      namespace = "app"
+      labels = {
+        app = "app"
+      }
+    }
+    spec = {
+      replicas = 1
+      selector = {
+        matchLabels = {
+          app = "app"
+        }
+      }
+      template = {
+        metadata = {
+          labels = {
+            app = "app"
+          }
+        }
+        spec = {
+          containers = [{
+            name  = "app"
+            image = "${data.service.repository_url}:latest"
+
+            imagePullPolicy = "Always"
+
+            env = [
+              { name = "AWS_REGION", value = "us-east-1" },
+              { name = "SQS_QUEUE_URL", value = aws_sqs_queue.jobs_queue.id }
+            ]
+          }]
+
+        }
+      }
+    }
+  }
+  depends_on = [kubernetes_namespace.app_ns]
+}
+
+### KEDA Scaler per SQS
+resource "kubernetes_manifest" "keda_scaled_object" {
+  count = var.deploy_k8s ? 1 : 0
+  manifest = {
+    apiVersion = "keda.sh/v1alpha1"
+    kind       = "ScaledObject"
+    metadata = {
+      name      = "app-scaler"
+      namespace = "app"
+    }
+    spec = {
+      scaleTargetRef = {
+        name = "app"
+      }
+      minReplicaCount = 1
+      maxReplicaCount = 5
+      pollingInterval = 15
+      triggers = [{
+        type = "aws-sqs-queue"
+        metadata = {
+          queueURL      = aws_sqs_queue.jobs_queue.id
+          queueLength   = "5"
+          awsRegion     = "us-east-1"
+          identityOwner = "operator"
+        }
+      }]
+    }
+  }
+  depends_on = [helm_release.keda, kubernetes_manifest.app_deployment]
+}
+
 
 output "vpc_id" {
   description = "ID of the VPC"

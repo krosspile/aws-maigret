@@ -3,3 +3,9 @@ variable "aws_region" {
   type        = string
   default     = "us-east-1"
 }
+
+variable "deploy_k8s" {
+  description = "Set to true to deploy Kubernetes resources after EKS creation"
+  type        = bool
+  default     = false
+}

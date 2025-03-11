@@ -19,3 +19,12 @@ Caratteristiche principali
 - DynamoDB: Archivia in modo efficiente i risultati delle scansioni effettuate con Maigret, offrendo alte prestazioni e facilità di accesso ai dati.
 
 Questo progetto dimostra l'efficacia di una soluzione completamente cloud-native per eseguire operazioni asincrone intensive in modo altamente scalabile e sicuro.
+
+## Deploy
+
+```
+git clone https://github.com/krosspile/aws-maigret.git
+cd aws-maigret/terraform
+terraform apply -auto-approve
+terraform apply -auto-approve -var="deploy_k8s=true" 
+```

@@ -4,7 +4,7 @@ module "vpc" {
   name    = "vpc-sistemi-cloud"
   cidr    = "10.0.0.0/16"
 
-  azs             = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
   public_subnets  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
   private_subnets = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
@@ -94,15 +94,7 @@ data "aws_ecr_repository" "service" {
   name = "app"
 }
 
-variable "deploy_k8s" {
-  description = "Set to true to deploy Kubernetes resources after EKS creation"
-  type        = bool
-  default     = false
-}
 
-
-
-### Kubernetes Namespace
 resource "kubernetes_namespace" "app_ns" {
   count = var.deploy_k8s ? 1 : 0
   metadata {
@@ -110,7 +102,6 @@ resource "kubernetes_namespace" "app_ns" {
   }
 }
 
-### Kubernetes Deployment
 resource "kubernetes_manifest" "app_deployment" {
   count = var.deploy_k8s ? 1 : 0
   manifest = {
@@ -144,7 +135,7 @@ resource "kubernetes_manifest" "app_deployment" {
             imagePullPolicy = "Always"
 
             env = [
-              { name = "AWS_REGION", value = var.aws_region},
+              { name = "AWS_REGION", value = var.aws_region },
               { name = "SQS_QUEUE_URL", value = aws_sqs_queue.jobs_queue.id }
             ]
           }]
@@ -170,18 +161,18 @@ resource "kubernetes_manifest" "keda_scaled_object" {
       scaleTargetRef = {
         name = "app"
       }
-      
+
       minReplicaCount = 1
       maxReplicaCount = 5
       pollingInterval = 15
-      cooldownPeriod = 100
+      cooldownPeriod  = 100
 
       triggers = [{
         type = "aws-sqs-queue"
         metadata = {
           queueURL      = aws_sqs_queue.jobs_queue.id
           queueLength   = "5"
-          awsRegion     = "us-east-1"
+          awsRegion     = var.aws_region
           identityOwner = "operator"
         }
       }]

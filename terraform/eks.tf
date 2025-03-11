@@ -144,7 +144,7 @@ resource "kubernetes_manifest" "app_deployment" {
             imagePullPolicy = "Always"
 
             env = [
-              { name = "AWS_REGION", value = "us-east-1" },
+              { name = "AWS_REGION", value = var.aws_region},
               { name = "SQS_QUEUE_URL", value = aws_sqs_queue.jobs_queue.id }
             ]
           }]

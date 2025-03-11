@@ -12,9 +12,10 @@ from maigret.sites import MaigretDatabase
 
 
 QUEUE_URL = os.getenv("SQS_QUEUE_URL", "not_found")
+AWS_REGION = os.getenv("AWS_REGION", "not_found")
 
-sqs = boto3.client("sqs", region_name="us-east-1")
-dynamodb_resource = boto3.resource("dynamodb", region_name="us-east-1")
+sqs = boto3.client("sqs", region_name=AWS_REGION)
+dynamodb_resource = boto3.resource("dynamodb", region_name=AWS_REGION)
 
 MAIGRET_DB_FILE_URL = (
     "https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json"
